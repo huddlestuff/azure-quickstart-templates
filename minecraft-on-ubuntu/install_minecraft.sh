@@ -16,8 +16,11 @@ minecraft_server_path=/srv/minecraft_server
 minecraft_user=minecraft
 minecraft_group=minecraft
 UUID_URL=https://api.mojang.com/users/profiles/minecraft/$1
-server_jar=minecraft_server.$2.jar
-SERVER_JAR_URL=https://s3.amazonaws.com/Minecraft.Download/versions/$2/minecraft_server.$2.jar
+#server_jar=minecraft_server.$2.jar
+server_jar=FTBServer-1.7.10-1614.jar
+#SERVER_JAR_URL=https://s3.amazonaws.com/Minecraft.Download/versions/$2/minecraft_server.$2.jar
+
+ftb_archive_url=http://ftb.cursecdn.com/FTB2/modpacks/FTBInfinity/$2/FTBInfinityServer.zip
 
 # add and update repos
 while ! echo y | apt-get install -y software-properties-common; do
@@ -43,6 +46,12 @@ while ! echo y | apt-get install -y oracle-java8-installer; do
     apt-get install -y oracle-java8-installer
 done
 
+# Install zip and unzip
+while ! echo y | apt-get install -y zip unzip; do
+    sleep 10
+    apt-get install -y zip unzip
+done
+
 # create user and install folder
 adduser --system --no-create-home --home /srv/minecraft-server $minecraft_user
 addgroup --system $minecraft_group
@@ -50,10 +59,25 @@ mkdir $minecraft_server_path
 cd $minecraft_server_path
 
 # download the server jar
-while ! echo y | wget $SERVER_JAR_URL; do
+#while ! echo y | wget $SERVER_JAR_URL; do
+#    sleep 10
+#    wget $SERVER_JAR_URL
+#done
+
+# download the FTB archive
+while ! echo y | wget $ftb_archive_url; do
     sleep 10
-    wget $SERVER_JAR_URL
+    wget $ftb_archive_url
 done
+
+# extract the FTB archive
+while ! echo y | unzip *.zip; do
+    unzip *.zip
+done
+
+
+./settings.sh
+./FTBInstall.sh
 
 # set permissions on install folder
 chown -R $minecraft_user $minecraft_server_path
@@ -62,11 +86,13 @@ chown -R $minecraft_user $minecraft_server_path
 totalMem=$(free -m | awk '/Mem:/ { print $2 }')
 if [ $totalMem -lt 1024 ]; then
     memoryAlloc=512m
+    memoryAlloc2=1024m
 else
     memoryAlloc=1024m
+    memoryAlloc2=2048m
 fi
 
-# create the uela file
+# create the eula file
 touch $minecraft_server_path/eula.txt
 echo 'eula=true' >> $minecraft_server_path/eula.txt
 
@@ -74,7 +100,7 @@ echo 'eula=true' >> $minecraft_server_path/eula.txt
 touch /etc/systemd/system/minecraft-server.service
 printf '[Unit]\nDescription=Minecraft Service\nAfter=rc-local.service\n' >> /etc/systemd/system/minecraft-server.service
 printf '[Service]\nWorkingDirectory=%s\n' $minecraft_server_path >> /etc/systemd/system/minecraft-server.service
-printf 'ExecStart=/usr/bin/java -Xms%s -Xmx%s -jar %s/%s nogui\n' $memoryAlloc $memoryAlloc $minecraft_server_path $server_jar >> /etc/systemd/system/minecraft-server.service
+printf 'ExecStart=/usr/bin/java -Xms%s -Xmx%s -XX:+UseParNewGC -XX:+CMSIncrementalPacing -XX:+CMSClassUnloadingEnabled -XX:ParallelGCThreads=2 -XX:MinHeapFreeRatio=5 -XX:MaxHeapFreeRatio=10 -jar %s/%s nogui\n' $memoryAlloc $memoryAlloc2 $minecraft_server_path $server_jar >> /etc/systemd/system/minecraft-server.service
 printf 'ExecReload=/bin/kill -HUP $MAINPID\nKillMode=process\nRestart=on-failure\n' >> /etc/systemd/system/minecraft-server.service
 printf '[Install]\nWantedBy=multi-user.target\nAlias=minecraft-server.service' >> /etc/systemd/system/minecraft-server.service
 
